@@ -27,6 +27,8 @@ public:
 	LaneDetector(parameter para);
 	~LaneDetector();
 	bool ProcessImage(cv::Mat image);
+
+public:
 	std::vector<std::vector<cv::Point2f> > getLinePoints() { return mLinePoints; }
 	std::vector<std::vector<cv::Point2f> > getLanePoints() { return mLanePoints; }
 	std::vector<cv::Point2f> getDynamicROIPoints() { return mDynamicRoiPoints; }
@@ -46,26 +48,27 @@ private:
 	void Update(cv::Mat input, bool verbose=false);
 
 private:
-	//IPM
 	void Birdeye(cv::Mat input, cv::Mat &warped, cv::Mat &Minv, bool verbose=false);
-	//get binary image about line
+
 	void Binarize(cv::Mat warped, cv::Mat &binary, bool verbose=false);
 
 	void LinePixsInWindow(cv::Mat binary, std::vector<std::vector<cv::Point> >& all_line_pixs, std::vector<int>& fitting_degree, bool verbose=false);
 
-	void PredictLines(std::vector<std::vector<cv::Point> > all_line_pixs, std::vector<int> fitting_degree, 
+	/* Predicting line points location by regression */
+	void PredictLines(std::vector<std::vector<cv::Point> > all_line_pixs, std::vector<int> fitting_degree, int image_height,
 							std::vector<std::vector<cv::Point2f> >& all_line_pixs_pred_ipm);
 
-
+	/* Find vanish point and assistant lines */
 	void FindVanishPoint(std::vector<std::vector<cv::Point2f> > all_line_points, int image_height, 
 									cv::Point& vp, std::vector<int>& all_bpxs, std::vector<cv::Point>& tentative_roi);
-private:	
+private:
+	/* Lane points, middle of line points */	
 	void GenerateLanePoints(std::vector<std::vector<cv::Point2f> > all_line_points, std::vector<std::vector<cv::Point2f> >& all_lane_points);
-	void FindBinaryThreshold(cv::Mat warped_gray, std::vector<int>& threshold);
-
-	void UpdateROI(std::vector<std::vector<cv::Point2f>> all_line_pixs_pred_ipm);
+	/* Seperate to 4 part then calculate grayscale threshold each part */
+	void FindBinaryThreshold(cv::Mat warped_gray, int num_x_part, int num_y_part, std::vector<int>& threshold);
 
 private:
+	/* polynomial regression and histogram */
 	Utility *utility;
 
 private:
@@ -85,7 +88,7 @@ private:
  	int mLineWidthMax;      //filtering white pixs but not lane
  	int mLineWidthMin;		//filtering white pixs but not lane
  	int mAdativeROIBoundry; //adaptive ROI region
- 	int mMidOfView;
+ 	int mMidOfView;         //location of car
  	int mCount;
 };
 #endif // CURVED_LANE_DETECTOR_H

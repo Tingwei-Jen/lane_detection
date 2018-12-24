@@ -44,8 +44,7 @@ void LaneDetector::Update(cv::Mat input, bool verbose)
 	LinePixsInWindow(binary, all_line_pixs, fitting_degree, verbose);
 
 	vector<vector<cv::Point2f>> all_line_pixs_pred_ipm;
-	PredictLines(all_line_pixs, fitting_degree, all_line_pixs_pred_ipm);
-
+	PredictLines(all_line_pixs, fitting_degree, input.rows, all_line_pixs_pred_ipm);
 
 	this->mLinePoints.clear();
 	this->mLanePoints.clear();
@@ -67,7 +66,7 @@ void LaneDetector::Update(cv::Mat input, bool verbose)
 		cv::perspectiveTransform(all_line_pixs_pred_ipm[1], line_pixs_pred_right, Minv);
 		this->mLinePoints.push_back(line_pixs_pred_right);
 	} 
-	else 
+	else //DETECT BOTH
 	{
 		this->mState = DETECTBOTH;
 		vector<cv::Point2f> line_pixs_pred_left, line_pixs_pred_right;
@@ -76,10 +75,11 @@ void LaneDetector::Update(cv::Mat input, bool verbose)
 		this->mLinePoints.push_back(line_pixs_pred_left);
 		this->mLinePoints.push_back(line_pixs_pred_right);
 
+
 		//generate lane
 		GenerateLanePoints(this->mLinePoints, this->mLanePoints);
 
-		//generate vanish point
+		//generate vanish point, base points, and tentative roi
 		cv::Point vp;
 		vector<int> bpxs;
 		vector<cv::Point> tentative_roi;
@@ -91,15 +91,14 @@ void LaneDetector::Update(cv::Mat input, bool verbose)
 		
 		for(int i=0; i<tentative_roi.size();i++)
 				cv::circle(input, tentative_roi[i], 2, cv::Scalar(0,255,255), -1);
-	
-		//dynamic roi
-		vector<cv::Point2f> dynamic_roi_pred;
-		cout<<all_line_pixs_pred_ipm[0][0].x<<endl;
+
+		//dynamic roi		
 		cv::Point2f top_left(all_line_pixs_pred_ipm[0][0].x - this->mAdativeROIBoundry, 0);
 		cv::Point2f buttom_left(all_line_pixs_pred_ipm[0][input.rows-1].x - this->mAdativeROIBoundry, input.rows);
 		cv::Point2f top_right(all_line_pixs_pred_ipm[1][0].x + this->mAdativeROIBoundry, 0);
 		cv::Point2f buttom_right(all_line_pixs_pred_ipm[1][input.rows-1].x + this->mAdativeROIBoundry, input.rows);
 
+		vector<cv::Point2f> dynamic_roi_pred;
 		dynamic_roi_pred.push_back(top_left); 
 		dynamic_roi_pred.push_back(buttom_left); 
 		dynamic_roi_pred.push_back(top_right); 
@@ -107,90 +106,28 @@ void LaneDetector::Update(cv::Mat input, bool verbose)
 
 		cv::perspectiveTransform(dynamic_roi_pred, this->mDynamicRoiPoints, Minv);
 
-		//switch lane judge!!!!
+	 	if(this->mMidOfView < bpxs[1])
+		{
+			cout<<"change to left ROI"<<endl;
 
+			this->mDynamicRoiPoints[2].x =  this->mDynamicRoiPoints[0].x + 15;
+			this->mDynamicRoiPoints[3].x =  this->mDynamicRoiPoints[1].x + 35;
+			this->mDynamicRoiPoints[0].x = tentative_roi[0].x - 20;
+			this->mDynamicRoiPoints[1].x = tentative_roi[1].x - 40;
 
+		}
+		else if (this->mMidOfView > bpxs[2])
+		{
+			cout<<"change right ROI"<<endl;
 
-
-
-
-
+			this->mDynamicRoiPoints[0].x =  this->mDynamicRoiPoints[2].x - 15;
+			this->mDynamicRoiPoints[1].x =  this->mDynamicRoiPoints[3].x - 35;
+			this->mDynamicRoiPoints[2].x = tentative_roi[2].x + 15;
+			this->mDynamicRoiPoints[3].x = tentative_roi[3].x + 35;
+		}
 	}
 
 	cout<<"this->mState: "<<this->mState<<endl;
-
-
-
-
-
-
-
-
-	// if(verbose)
-	// 	cv::imshow("regression line", plot);
-
-	// //update ROI and find Lane points and Find vanishing point
-	// if(this->mLinePoints.size()>=2)
-	// {
-	// 	cv::perspectiveTransform(roi_pixs_pred, this->mDynamicRoiPoints, Minv);
-	// 	GenerateLanePoints(this->mLinePoints, this->mLanePoints);
-
-	// 	cv::Point vp;
-	// 	vector<int> bpxs;
-	// 	vector<cv::Point> tentative_roi;
-	// 	FindVanishPoint(this->mLinePoints, input.rows, vp, bpxs, tentative_roi);
-		
-	// 	cv::circle(input, vp, 2, cv::Scalar(0,255,255), -1);
-		
-	// 	for(int i=0; i<bpxs.size();i++)
-	// 		cv::line(input, vp, cv::Point(bpxs[i], input.rows), cv::Scalar(0, 0, 50*(i+1)), 1);
-		
-	// 	for(int i=0; i<tentative_roi.size();i++)
-	// 			cv::circle(input, tentative_roi[i], 2, cv::Scalar(0,255,255), -1);
-	
-	// 	for(int i=0; i<bpxs.size();i++)
-	// 		cout<<bpxs[i]<<"    ";
-	// 	cout<<endl;
-
-	// 	//switching judge
-	// 	if(this->mSwitchState == NO_SWITCH)
-	// 	{
-	// 		if(this->mMidOfView < (bpxs[1]+(bpxs[2]-bpxs[1])/4))
-	// 		{
-	// 			cout<<"Expand to left"<<endl;
-	// 			this->mSwitchState = SWITCH_LEFT;
-	// 			this->mDrawLaneInExpandROI = true;
-	// 			this->mDynamicRoiPoints[0].x = tentative_roi[0].x - 15;
-	// 			this->mDynamicRoiPoints[1].x = tentative_roi[1].x -35;		
-	// 		} else if (this->mMidOfView > (bpxs[1]+(bpxs[2]-bpxs[1])*3/4))
-	// 		{
-	// 			cout<<"Expand to right"<<endl;
-	// 			this->mSwitchState = SWITCH_RIGHT;
-	// 			this->mDrawLaneInExpandROI = true;
-	// 			this->mDynamicRoiPoints[2].x = tentative_roi[2].x + 15;
-	// 			this->mDynamicRoiPoints[3].x = tentative_roi[3].x + 35;	
-	// 		}
-	// 	}
-	// 	else if (this->mSwitchState == SWITCH_LEFT && this->mMidOfView < (bpxs[1]+(bpxs[2]-bpxs[1])*3/4)) 
-	// 	{
-	// 			cout<<"finish switch"<<endl;
-	// 			cout<<bpxs[1]<<"  "<<bpxs[2]<<endl;
-	// 			this->mSwitchState = NO_SWITCH;
-	// 			this->mDrawLaneInExpandROI = false;
-	// 			this->mDynamicRoiPoints[2].x = this->mLinePoints[1][0].x + 15;
-	// 			this->mDynamicRoiPoints[3].x = this->mLinePoints[1][this->mLinePoints[1].size()-1].x + 35;
-	// 	}
-	// 	else if (this->mSwitchState == SWITCH_RIGHT && this->mMidOfView > (bpxs[2]+(bpxs[3]-bpxs[2])/4)) 
-	// 	{
-	// 			cout<<"finish switch"<<endl;
-	// 			this->mSwitchState = NO_SWITCH;
-	// 			this->mDrawLaneInExpandROI = false;
-	// 			this->mDynamicRoiPoints[0].x = this->mLinePoints[1][0].x - 15;
-	// 			this->mDynamicRoiPoints[1].x = this->mLinePoints[1][this->mLinePoints[1].size()-1].x - 35;
-	// 	}
-	// }
-
-	// this->mCount++;
 }
 
 
@@ -248,14 +185,11 @@ void LaneDetector::Binarize(cv::Mat warped, cv::Mat &binary, bool verbose)
 	cv::Mat warped_gray;
 	cv::cvtColor(warped, warped_gray, CV_BGR2GRAY);
 
-	vector<int> grayscale_threshold;	
-	FindBinaryThreshold(warped_gray, grayscale_threshold);
-
-	// for(int i=0; i<grayscale_threshold.size(); i++)
-	// 	cout<<grayscale_threshold[i]<<endl;
-
 	int num_x_part = 2;
 	int num_y_part = 2;
+
+	vector<int> grayscale_threshold;	
+	FindBinaryThreshold(warped_gray, num_x_part, num_y_part, grayscale_threshold);
 
 	int width = warped_gray.cols/num_x_part;
 	int height = warped_gray.rows/num_y_part;
@@ -424,11 +358,11 @@ void LaneDetector::LinePixsInWindow(cv::Mat binary, std::vector<std::vector<cv::
 		cv::imshow("sliding_window",plot);
 }
 
-void LaneDetector::PredictLines(vector<vector<cv::Point> > all_line_pixs, vector<int> fitting_degree, 
+/* Predicting line points location by regression */
+void LaneDetector::PredictLines(vector<vector<cv::Point> > all_line_pixs, vector<int> fitting_degree, int image_height,
 														vector<vector<cv::Point2f> >& all_line_pixs_pred_ipm)
 {
 	all_line_pixs_pred_ipm.clear();
-	int height = 480;
 	int n_lines = 2;
 
 	//predict lines
@@ -440,7 +374,7 @@ void LaneDetector::PredictLines(vector<vector<cv::Point> > all_line_pixs, vector
 
 		vector<cv::Point2f> line_pixs_pred_ipm;
 
-		for( int row = 0; row < height; row++ )
+		for( int row = 0; row < image_height; row++ )
 		{
 			double x_predict;
 			utility->poly1d(fitting_coeff, row, x_predict);
@@ -451,8 +385,11 @@ void LaneDetector::PredictLines(vector<vector<cv::Point> > all_line_pixs, vector
 	}
 }
 
-//x-x1 = m*(y-y1)
-//x-my = x1-m*y1
+/*
+Find vanish point and assistant lines
+x-x1 = m*(y-y1)
+x-my = x1-m*y1
+*/
 void LaneDetector::FindVanishPoint(std::vector<std::vector<cv::Point2f> > all_line_points, int image_height, 
 														cv::Point& vp, std::vector<int>& all_bpxs, vector<cv::Point>& tentative_roi)
 {
@@ -530,6 +467,9 @@ void LaneDetector::FindVanishPoint(std::vector<std::vector<cv::Point2f> > all_li
 	tentative_roi.push_back(cv::Point(xright_buttom, this->mDynamicRoiPoints[3].y));
 }
 
+/*
+Lane points, middle of line points
+*/
 void LaneDetector::GenerateLanePoints(vector<vector<cv::Point2f>> all_line_points, vector<vector<cv::Point2f>>& all_lane_points)
 {
 	all_lane_points.clear();
@@ -553,19 +493,17 @@ void LaneDetector::GenerateLanePoints(vector<vector<cv::Point2f>> all_line_point
 
 /*
 seperate to 4 part then calculate grayscale threshold each part
+ex. use 1256
 ---------
-| 1 | 3 |
--------
-| 2 | 4 |
+| 1 | 3 | 
+---------
+| 2 | 4 | 
 ---------
 */
-void LaneDetector::FindBinaryThreshold(cv::Mat warped_gray, std::vector<int>& threshold)
+void LaneDetector::FindBinaryThreshold(cv::Mat warped_gray, int num_x_part, int num_y_part, std::vector<int>& threshold)
 {
 	cv::Mat temp = warped_gray.clone();
 	threshold.clear();
-
-	int num_x_part = 2;
-	int num_y_part = 2;
 
 	int width = warped_gray.cols/num_x_part; 
 	int height = warped_gray.rows/num_y_part;		
@@ -576,9 +514,9 @@ void LaneDetector::FindBinaryThreshold(cv::Mat warped_gray, std::vector<int>& th
 	int interval = 10;
 	int number_interval = 255/interval;
 
-	int mininum_grayscale = 95;
+	int mininum_grayscale = 100;
 	int boundry = mininum_grayscale/interval;
-	int value_gap = 15;
+	int value_gap = 20;
 
 	for(int x=0; x<num_x_part; x++)
 	{
@@ -591,6 +529,7 @@ void LaneDetector::FindBinaryThreshold(cv::Mat warped_gray, std::vector<int>& th
 				for(int row=height*y; row<height*(y+1); row=row+row_gap)
 				{
 
+					if(col)
 					warped_gray_value.push_back(temp.at<uchar>(row,col));
 					temp.at<uchar>(row,col) = 255;
 				}
@@ -605,17 +544,39 @@ void LaneDetector::FindBinaryThreshold(cv::Mat warped_gray, std::vector<int>& th
 			}
 
 			int max_idx_non_zero = number_interval;
-
+			/*from numter_interval ---> boundry  
+			  find first non zero (probably lines)*/
 			for(int i=number_interval; i>=boundry; i--)
 			{
-				if(number[i]!=0 && number[i]>=10)
+				if( number[i]>=10 )
 				{
 					max_idx_non_zero = i;
 					break;
 				}
 			}
 
+			/*from non zero max to ( non_zero - 3 )
+			  avoid white car*/
+			if( max_idx_non_zero != number_interval)
+			{
+				int low_boundry = max_idx_non_zero-4;
+				if(low_boundry<10)
+					low_boundry = 10;
+			
+				int sum=0; 
+				for(int i=max_idx_non_zero; i>low_boundry; i--)
+					sum = sum + number[i];
+					
+				if(sum>430)
+					max_idx_non_zero = number_interval;
+			}
+
 			threshold.push_back(max_idx_non_zero*interval - value_gap);	
 		}
 	}
+
+	for(int i=0; i<threshold.size();i++)
+		cout<<threshold[i]<<endl;
+	
+	cv::imshow("temp", temp);
 }
